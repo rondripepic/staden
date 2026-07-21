@@ -1,0 +1,13 @@
+{
+  "name": "staden",
+  "version": "1.0.0",
+  "main": "staden.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node staden.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.27.0",
+    "undici": "^8.8.0"
+  }
+}
