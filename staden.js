@@ -1,120 +1,478 @@
-const { Client, GatewayIntentBits } = require('discord.js');
+const {
+    Client,
+    GatewayIntentBits,
+    PermissionsBitField
+} = require('discord.js');
 
-const token = process.env.DISCORD_TOKEN;
-const targetUserId = process.env.TARGET_USER_ID;
-const destinationChannelId = process.env.DESTINATION_CHANNEL_ID;
+require('dotenv').config();
 
-if (!token || !targetUserId || !destinationChannelId) {
-    console.error(
-        'Missing environment variables. Set DISCORD_TOKEN, TARGET_USER_ID, and DESTINATION_CHANNEL_ID.'
+const fs = require('fs');
+
+
+// =========================
+// CONFIG
+// =========================
+
+const configFile = './config.json';
+
+const ownerId = process.env.OWNER_ID;
+
+
+// =========================
+// CONFIG FUNCTIONS
+// =========================
+
+function loadConfig() {
+
+    return JSON.parse(
+        fs.readFileSync(configFile, 'utf8')
     );
-    process.exit(1);
+
 }
 
+
+function saveConfig(config) {
+
+    fs.writeFileSync(
+        configFile,
+        JSON.stringify(config, null, 4)
+    );
+
+}
+
+
+// =========================
+// DISCORD CLIENT
+// =========================
+
 const client = new Client({
+
     intents: [
+
         GatewayIntentBits.Guilds,
+
         GatewayIntentBits.GuildMessages,
+
         GatewayIntentBits.MessageContent
+
     ]
+
 });
 
-let destinationChannel;
 
-client.once('ready', async () => {
-    console.log(`Logged in as ${client.user.tag}`);
+// =========================
+// BOT READY
+// =========================
 
-    try {
-        destinationChannel = await client.channels.fetch(destinationChannelId);
+client.once('ready', () => {
 
-        if (!destinationChannel || !destinationChannel.isTextBased()) {
-            throw new Error('Destination channel is not a text channel.');
-        }
+    console.log(
+        `Logged in as ${client.user.tag}`
+    );
 
-        console.log(
-            `Using destination channel ${destinationChannel.name} (${destinationChannel.id})`
-        );
-    } catch (err) {
-        console.error('Failed to fetch destination channel:', err);
-        process.exit(1);
-    }
 });
 
-client.on('messageCreate', async (message) => {
-    try {
-        // Only listen for the target user
-        if (message.author.id !== targetUserId) return;
 
-        // Don't forward messages from the destination channel
-        if (message.channel.id === destinationChannelId) return;
+// =========================
+// SLASH COMMANDS
+// =========================
 
-        // Ignore webhooks
-        if (message.webhookId) return;
+client.on(
+    'interactionCreate',
+    async interaction => {
 
-        // Ignore bots
-        if (message.author.bot) return;
-
-        const content = message.content || '';
-
-        // Get all attachments, including images
-        const files = message.attachments.map(attachment => attachment.url);
-
-        // Ignore completely empty messages
-        if (!content && files.length === 0) {
-            console.log(
-                'No text or attachments to forward for message',
-                message.id
-            );
+        if (
+            !interaction.isChatInputCommand()
+        ) {
             return;
         }
 
-        const responseText =
-            `${content || '[no text content]'}\n` +
-            `Stupid + Athan = Stathan😂 🫲`;
 
-        // Send text and attachments
-        await destinationChannel.send({
-            content: responseText,
-            files: files
-        });
+        // Only allow you to use commands
+        if (
+            interaction.user.id !== ownerId
+        ) {
 
-        console.log(
-            `Forwarded message ${message.id} from ${message.author.tag}`
-        );
+            return interaction.reply({
 
-        // Try to delete the original message
-        try {
-            const botMember = message.guild?.members.cache.get(client.user.id);
+                content:
+                    'You do not have permission to use this command.',
 
-            if (
-                botMember &&
-                message.channel
-                    .permissionsFor(botMember)
-                    .has('ManageMessages')
-            ) {
-                await message.delete();
+                ephemeral: true
 
-                console.log(
-                    `Deleted original message ${message.id}`
-                );
-            } else {
-                console.log(
-                    `Skipping delete: bot lacks Manage Messages permission`
-                );
-            }
-        } catch (deleteErr) {
-            console.error(
-                `Could not delete original message ${message.id}:`,
-                deleteErr
-            );
+            });
+
         }
 
-    } catch (err) {
-        console.error('Error handling messageCreate:', err);
-    }
-});
 
-client.login(token).catch(err => {
-    console.error('Failed to login:', err);
-    process.exit(1);
-});
+        const config =
+            loadConfig();
+
+
+        // =========================
+        // /setuser
+        // =========================
+
+        if (
+            interaction.commandName ===
+            'setuser'
+        ) {
+
+            const user =
+                interaction.options.getUser(
+                    'user'
+                );
+
+
+            config.targetUserId =
+                user.id;
+
+
+            saveConfig(config);
+
+
+            await interaction.reply(
+
+                `Target user set to **${user.tag}**.`
+
+            );
+
+        }
+
+
+        // =========================
+        // /setchannel
+        // =========================
+
+        if (
+            interaction.commandName ===
+            'setchannel'
+        ) {
+
+            const channel =
+                interaction.options.getChannel(
+                    'channel'
+                );
+
+
+            config.destinationChannelId =
+                channel.id;
+
+
+            saveConfig(config);
+
+
+            await interaction.reply(
+
+                `Destination channel set to <#${channel.id}>.`
+
+            );
+
+        }
+
+
+        // =========================
+        // /setmessage
+        // =========================
+
+        if (
+            interaction.commandName ===
+            'setmessage'
+        ) {
+
+            const text =
+                interaction.options.getString(
+                    'text'
+                );
+
+
+            config.forwardMessage =
+                text;
+
+
+            saveConfig(config);
+
+
+            await interaction.reply(
+
+                `Forward message changed to:\n> ${text}`
+
+            );
+
+        }
+
+
+        // =========================
+        // /status
+        // =========================
+
+        if (
+            interaction.commandName ===
+            'status'
+        ) {
+
+            const targetUser =
+
+                config.targetUserId
+
+                    ? `<@${config.targetUserId}>`
+
+                    : 'Not set';
+
+
+            const destinationChannel =
+
+                config.destinationChannelId
+
+                    ? `<#${config.destinationChannelId}>`
+
+                    : 'Not set';
+
+
+            const forwardMessage =
+
+                config.forwardMessage
+
+                    ? config.forwardMessage
+
+                    : 'Not set';
+
+
+            await interaction.reply(
+
+                `**Staden Status**\n\n` +
+
+                `Target User: ${targetUser}\n` +
+
+                `Destination Channel: ${destinationChannel}\n` +
+
+                `Forward Message: ${forwardMessage}`
+
+            );
+
+        }
+
+    }
+
+);
+
+
+// =========================
+// MESSAGE FORWARDING
+// =========================
+
+client.on(
+    'messageCreate',
+    async message => {
+
+        try {
+
+            const config =
+                loadConfig();
+
+
+            // No target user configured
+            if (
+                !config.targetUserId
+            ) {
+                return;
+            }
+
+
+            // No destination channel configured
+            if (
+                !config.destinationChannelId
+            ) {
+                return;
+            }
+
+
+            // Ignore bots
+            if (
+                message.author.bot
+            ) {
+                return;
+            }
+
+
+            // Only forward messages
+            // from the selected user
+            if (
+
+                message.author.id !==
+                config.targetUserId
+
+            ) {
+
+                return;
+
+            }
+
+
+            // Don't forward messages
+            // from the destination channel
+            if (
+
+                message.channel.id ===
+                config.destinationChannelId
+
+            ) {
+
+                return;
+
+            }
+
+
+            // Ignore webhooks
+            if (
+                message.webhookId
+            ) {
+                return;
+            }
+
+
+            // Fetch destination channel
+            const destinationChannel =
+
+                await client.channels.fetch(
+
+                    config.destinationChannelId
+
+                );
+
+
+            if (
+                !destinationChannel
+            ) {
+
+                console.error(
+
+                    'Destination channel not found.'
+
+                );
+
+                return;
+
+            }
+
+
+            // Get message content
+            const content =
+                message.content || '';
+
+
+            // Get images/files
+            const files =
+
+                message.attachments.map(
+
+                    attachment =>
+                        attachment.url
+
+                );
+
+
+            // Ignore empty messages
+            if (
+
+                !content &&
+                files.length === 0
+
+            ) {
+
+                return;
+
+            }
+
+
+            // Create forwarded message
+            const responseText =
+
+                `${content || '[no text content]'}\n` +
+
+                `${config.forwardMessage || ''}`;
+
+
+            // Send message and attachments
+            await destinationChannel.send({
+
+                content: responseText,
+
+                files: files
+
+            });
+
+
+            console.log(
+
+                `Forwarded message ${message.id}`
+
+            );
+
+
+            // =========================
+            // DELETE ORIGINAL MESSAGE
+            // =========================
+
+            const botMember =
+
+                message.guild?.members.cache.get(
+
+                    client.user.id
+
+                );
+
+
+            if (
+
+                botMember &&
+
+                message.channel
+                    .permissionsFor(botMember)
+                    .has(
+
+                        PermissionsBitField.Flags
+                            .ManageMessages
+
+                    )
+
+            ) {
+
+                await message.delete();
+
+
+                console.log(
+
+                    `Deleted original message ${message.id}`
+
+                );
+
+            }
+
+
+        } catch (error) {
+
+            console.error(
+
+                'Error forwarding message:',
+
+                error
+
+            );
+
+        }
+
+    }
+
+);
+
+
+// =========================
+// LOGIN
+// =========================
+
+client.login(
+
+    process.env.DISCORD_TOKEN
+
+);
